@@ -1,4 +1,4 @@
-# backend/app.py - VERSÃO FINAL COM IA E EXTRATOR CORRIGIDO
+# backend/app.py - VERSÃO FINAL (IA spaCy + docx2txt)
 
 import os
 import io
@@ -20,7 +20,7 @@ except OSError:
     print("Modelo 'pt_core_news_sm' não pôde ser carregado. Verifique a instalação.")
     exit()
 
-# --- MAPA DE COMPETÊNCIAS ---
+# --- MAPA DE COMPETÊNCIAS (A "INTELIGÊNCIA" DO ATS) ---
 KEYWORDS_MAP_POR_NIVEL = {
     "estagiario": {"Lançamentos e Conciliações": ["lançamento", "lançamentos", "conciliação", "conciliações"], "Organização de Documentos": ["arquivo", "documento", "organização"], "Rotinas Financeiras": ["contas a pagar", "contas a receber", "fluxo de caixa"], "Excel / Planilhas": ["excel", "planilha", "planilhas"]},
     "assistente": {"Conciliação Bancária": ["conciliação bancária"], "Documentos Fiscais": ["nota fiscal", "nf-e", "danfe"], "Apuração de Impostos": ["imposto", "impostos", "retenção na fonte", "icms", "ipi", "pis", "cofins"], "Obrigações Acessórias": ["sped", "dctf", "ecf"], "Sistemas ERP": ["erp", "totvs", "sap", "oracle"]},
@@ -57,7 +57,6 @@ def analisar():
     texto_bruto_cv = extrair_texto(io.BytesIO(file.read()), file.filename)
     if not texto_bruto_cv: return jsonify({"erro": "Não foi possível ler o conteúdo do arquivo."}), 400
 
-    # Processa o CV com a IA para entender as palavras
     doc_cv = nlp(texto_bruto_cv.lower())
     lemmas_cv = {token.lemma_ for token in doc_cv}
 
@@ -69,8 +68,9 @@ def analisar():
         for conceito, variacoes in mapa_para_analise.items():
             found = False
             for var in variacoes:
+                # Lematiza a variação e verifica se está contida nos lemmas do CV
+                # Isso é mais robusto para palavras únicas e frases curtas.
                 var_doc = nlp(var)
-                # Verifica se todos os lemmas da variação estão no conjunto de lemmas do CV
                 if all(token.lemma_ in lemmas_cv for token in var_doc):
                     found = True
                     break 
@@ -96,7 +96,7 @@ def analisar():
         "scoreFinal": round(score_final), "feedbackGeral": feedback_geral,
         "analiseKeywords": {"encontradas": encontradas_kw, "sugeridas": faltantes_kw},
         "analiseEstrutura": {"score": round(score_estrutura), "dica": "Ótima estrutura!"},
-        "vagaAnalisada": False
+        "vagaAnalisada": False # Mantivemos a versão que não usa o campo de vaga para máxima estabilidade
     }
     return jsonify(relatorio)
 
