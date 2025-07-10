@@ -1,26 +1,18 @@
-# backend/app.py - VERSÃO FINAL (IA spaCy + docx2txt)
+# backend/app.py - VERSÃO FULLSTACK FINAL
 
 import os
 import io
 import re
-import spacy
-from flask import Flask, request, jsonify
+import unicodedata
+from flask import Flask, request, jsonify, render_template # Adicionado render_template
 from flask_cors import CORS
 import PyPDF2
 import docx2txt
 
-# --- Inicialização ---
 app = Flask(__name__)
 CORS(app)
 
-# Carrega o modelo de linguagem do spaCy
-try:
-    nlp = spacy.load("pt_core_news_sm")
-except OSError:
-    print("Modelo 'pt_core_news_sm' não pôde ser carregado. Verifique a instalação.")
-    exit()
-
-# --- MAPA DE COMPETÊNCIAS (A "INTELIGÊNCIA" DO ATS) ---
+# ... (COLE AQUI TODO O BLOCO KEYWORDS_MAP_POR_NIVEL e SECOES_ESPERADAS da versão anterior) ...
 KEYWORDS_MAP_POR_NIVEL = {
     "estagiario": {"Lançamentos e Conciliações": ["lançamento", "lançamentos", "conciliação", "conciliações"], "Organização de Documentos": ["arquivo", "documento", "organização"], "Rotinas Financeiras": ["contas a pagar", "contas a receber", "fluxo de caixa"], "Excel / Planilhas": ["excel", "planilha", "planilhas"]},
     "assistente": {"Conciliação Bancária": ["conciliação bancária"], "Documentos Fiscais": ["nota fiscal", "nf-e", "danfe"], "Apuração de Impostos": ["imposto", "impostos", "retenção na fonte", "icms", "ipi", "pis", "cofins"], "Obrigações Acessórias": ["sped", "dctf", "ecf"], "Sistemas ERP": ["erp", "totvs", "sap", "oracle"]},
@@ -35,6 +27,13 @@ KEYWORDS_MAP_POR_NIVEL = {
 }
 SECOES_ESPERADAS = ["resumo", "experiência", "formação", "acadêmica", "habilidade", "competência", "idioma", "curso", "certificação", "projeto", "recomendação"]
 
+
+def normalizar_string(texto):
+    texto = str(texto).lower()
+    nfkd_form = unicodedata.normalize('NFD', texto)
+    texto_sem_acento = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    return texto_sem_acento
+
 def extrair_texto(file_stream, filename):
     texto_bruto = ""
     try:
@@ -47,6 +46,11 @@ def extrair_texto(file_stream, filename):
         print(f"Erro ao ler arquivo: {e}")
     return texto_bruto
 
+# NOVA ROTA PARA SERVIR A PÁGINA PRINCIPAL
+@app.route('/')
+def home():
+    return render_template('index.html')
+
 @app.route('/analisar', methods=['POST'])
 def analisar():
     if 'cv' not in request.files: return jsonify({"erro": "Nenhum arquivo de currículo enviado."}), 400
@@ -57,24 +61,15 @@ def analisar():
     texto_bruto_cv = extrair_texto(io.BytesIO(file.read()), file.filename)
     if not texto_bruto_cv: return jsonify({"erro": "Não foi possível ler o conteúdo do arquivo."}), 400
 
-    doc_cv = nlp(texto_bruto_cv.lower())
-    lemmas_cv = {token.lemma_ for token in doc_cv}
-
+    texto_cv_normalizado = normalizar_string(texto_bruto_cv)
+    
     mapa_para_analise = KEYWORDS_MAP_POR_NIVEL.get(nivel_vaga, {})
     
     encontradas_kw, faltantes_kw = [], []
 
     if mapa_para_analise:
         for conceito, variacoes in mapa_para_analise.items():
-            found = False
-            for var in variacoes:
-                # Lematiza a variação e verifica se está contida nos lemmas do CV
-                # Isso é mais robusto para palavras únicas e frases curtas.
-                var_doc = nlp(var)
-                if all(token.lemma_ in lemmas_cv for token in var_doc):
-                    found = True
-                    break 
-            if found:
+            if any(normalizar_string(var) in texto_cv_normalizado for var in variacoes):
                 encontradas_kw.append(conceito)
             else:
                 faltantes_kw.append(conceito)
@@ -96,13 +91,9 @@ def analisar():
         "scoreFinal": round(score_final), "feedbackGeral": feedback_geral,
         "analiseKeywords": {"encontradas": encontradas_kw, "sugeridas": faltantes_kw},
         "analiseEstrutura": {"score": round(score_estrutura), "dica": "Ótima estrutura!"},
-        "vagaAnalisada": False # Mantivemos a versão que não usa o campo de vaga para máxima estabilidade
+        "vagaAnalisada": False
     }
     return jsonify(relatorio)
-
-@app.route('/')
-def index():
-    return "Backend do Analisador de CV está no ar!"
 
 if __name__ == '__main__':
     app.run(debug=True)
